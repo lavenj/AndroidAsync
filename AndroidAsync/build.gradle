@@ -8,8 +8,7 @@ buildscript {
 }
 apply plugin: 'android-library'
 
-dependencies {
-}
+dependencies {}
 
 android {
   sourceSets {
@@ -23,7 +22,7 @@ android {
   }
 
     compileSdkVersion 17
-    buildToolsVersion "17"
+    buildToolsVersion '19'
 
     defaultConfig {
         minSdkVersion 7
