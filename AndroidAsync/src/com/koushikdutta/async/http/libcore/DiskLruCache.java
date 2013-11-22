@@ -147,7 +147,12 @@ public final class DiskLruCache implements Closeable {
     private final File journalFileBackup;
     private final int appVersion;
     private long maxSize;
-    private final int valueCount;
+
+	public int getValueCount() {
+		return valueCount;
+	}
+
+	private final int valueCount;
     private long size = 0;
     private Writer journalWriter;
     private final LinkedHashMap<String, Entry> lruEntries =
