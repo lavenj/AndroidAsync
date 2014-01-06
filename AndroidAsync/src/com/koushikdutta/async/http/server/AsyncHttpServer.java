@@ -14,11 +14,13 @@ import com.koushikdutta.async.Util;
 import com.koushikdutta.async.callback.CompletedCallback;
 import com.koushikdutta.async.callback.ListenCallback;
 import com.koushikdutta.async.http.AsyncHttpGet;
+import com.koushikdutta.async.http.AsyncHttpHead;
 import com.koushikdutta.async.http.AsyncHttpPost;
 import com.koushikdutta.async.http.HttpUtil;
 import com.koushikdutta.async.http.Multimap;
 import com.koushikdutta.async.http.WebSocket;
 import com.koushikdutta.async.http.WebSocketImpl;
+import com.koushikdutta.async.http.body.AsyncHttpRequestBody;
 import com.koushikdutta.async.http.libcore.RawHeaders;
 import com.koushikdutta.async.http.libcore.RequestHeaders;
 
@@ -49,7 +51,11 @@ public class AsyncHttpServer {
     
     protected void onRequest(AsyncHttpServerRequest request, AsyncHttpServerResponse response) {
     }
-    
+
+    protected AsyncHttpRequestBody onUnknownBody(RawHeaders headers) {
+        return new UnknownRequestBody(headers.get("Content-Type"));
+    }
+
     ListenCallback mListenCallback = new ListenCallback() {
         @Override
         public void onAccepted(final AsyncSocket socket) {
@@ -61,6 +67,12 @@ public class AsyncHttpServer {
                 boolean requestComplete;
                 AsyncHttpServerResponseImpl res;
                 boolean hasContinued;
+
+                @Override
+                protected AsyncHttpRequestBody onUnknownBody(RawHeaders headers) {
+                    return AsyncHttpServer.this.onUnknownBody(headers);
+                }
+
                 @Override
                 protected void onHeadersReceived() {
                     RawHeaders headers = getRawHeaders();
@@ -194,8 +206,8 @@ public class AsyncHttpServer {
         }
     };
 
-    public void listen(AsyncServer server, int port) {
-        server.listen(null, port, mListenCallback);
+    public AsyncServerSocket listen(AsyncServer server, int port) {
+        return server.listen(null, port, mListenCallback);
     }
 
     private void report(Exception ex) {
@@ -203,8 +215,8 @@ public class AsyncHttpServer {
             mCompletedCallback.onCompleted(ex);
     }
     
-    public void listen(int port) {
-        listen(AsyncServer.getDefault(), port);
+    public AsyncServerSocket listen(int port) {
+        return listen(AsyncServer.getDefault(), port);
     }
 
     public void listenSecure(final int port, final SSLContext sslContext) {
@@ -308,8 +320,8 @@ public class AsyncHttpServer {
     public void post(String regex, HttpServerRequestCallback callback) {
         addAction(AsyncHttpPost.METHOD, regex, callback);
     }
-    
-    public static InputStream getAssetStream(final Context context, String asset) {
+
+    public static android.util.Pair<Integer, InputStream> getAssetStream(final Context context, String asset) {
         String apkPath = context.getPackageResourcePath();
         String assetPath = "assets/" + asset;
         try {
@@ -318,7 +330,7 @@ public class AsyncHttpServer {
             while (entries.hasMoreElements()) {
                 ZipEntry entry = (ZipEntry) entries.nextElement();
                 if (entry.getName().equals(assetPath)) {
-                    return zip.getInputStream(entry);
+                    return new android.util.Pair<Integer, InputStream>((int)entry.getSize(), zip.getInputStream(entry));
                 }
             }
         }
@@ -360,24 +372,44 @@ public class AsyncHttpServer {
 
     public void directory(Context context, String regex, final String assetPath) {
         final Context _context = context.getApplicationContext();
-        addAction("GET", regex, new HttpServerRequestCallback() {
+        addAction(AsyncHttpGet.METHOD, regex, new HttpServerRequestCallback() {
             @Override
             public void onRequest(AsyncHttpServerRequest request, final AsyncHttpServerResponse response) {
                 String path = request.getMatcher().replaceAll("");
-                InputStream is = getAssetStream(_context, assetPath + path);
+                android.util.Pair<Integer, InputStream> pair = getAssetStream(_context, assetPath + path);
+                InputStream is = pair.second;
+                response.getHeaders().getHeaders().set("Content-Length", String.valueOf(pair.first));
                 if (is == null) {
                     response.responseCode(404);
                     response.end();
                     return;
                 }
                 response.responseCode(200);
-                response.getHeaders().getHeaders().add("Content-Type", getContentType(path));
+                response.getHeaders().getHeaders().add("Content-Type", getContentType(assetPath + path));
                 Util.pump(is, response, new CompletedCallback() {
                     @Override
                     public void onCompleted(Exception ex) {
                         response.end();
                     }
                 });
+            }
+        });
+        addAction(AsyncHttpHead.METHOD, regex, new HttpServerRequestCallback() {
+            @Override
+            public void onRequest(AsyncHttpServerRequest request, final AsyncHttpServerResponse response) {
+                String path = request.getMatcher().replaceAll("");
+                android.util.Pair<Integer, InputStream> pair = getAssetStream(_context, assetPath + path);
+                InputStream is = pair.second;
+                response.getHeaders().getHeaders().set("Content-Length", String.valueOf(pair.first));
+                if (is == null) {
+                    response.responseCode(404);
+                    response.end();
+                    return;
+                }
+                response.responseCode(200);
+                response.getHeaders().getHeaders().add("Content-Type", getContentType(assetPath + path));
+                response.writeHead();
+                response.end();
             }
         });
     }
