@@ -1,15 +1,13 @@
 package com.koushikdutta.async.http.socketio;
 
 import android.os.Handler;
-import android.os.Looper;
 import android.text.TextUtils;
 
 import com.koushikdutta.async.AsyncServer;
-import com.koushikdutta.async.callback.CompletedCallback;
 import com.koushikdutta.async.future.Future;
 import com.koushikdutta.async.future.SimpleFuture;
 import com.koushikdutta.async.http.AsyncHttpClient;
-import com.koushikdutta.async.http.WebSocket;
+import com.koushikdutta.async.http.socketio.transport.SocketIOTransport;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -17,22 +15,6 @@ import org.json.JSONObject;
 public class SocketIOClient extends EventEmitter {
     boolean connected;
     boolean disconnected;
-
-    private static void reportError(SimpleFuture<SocketIOClient> future, Handler handler, final ConnectCallback callback, final Exception e) {
-        if (!future.setComplete(e))
-            return;
-        if (handler != null) {
-            AsyncServer.post(handler, new Runnable() {
-                @Override
-                public void run() {
-                    callback.onConnectCompleted(e, null);
-                }
-            });
-        }
-        else {
-            callback.onConnectCompleted(e, null);
-        }
-    }
 
     private void emitRaw(int type, String message, Acknowledge acknowledge) {
         connection.emitRaw(type, this, message, acknowledge);
@@ -89,10 +71,9 @@ public class SocketIOClient extends EventEmitter {
 
     ConnectCallback connectCallback;
     public static Future<SocketIOClient> connect(final AsyncHttpClient client, final SocketIORequest request, final ConnectCallback callback) {
-        final Handler handler = Looper.myLooper() == null ? null : request.getHandler();
         final SimpleFuture<SocketIOClient> ret = new SimpleFuture<SocketIOClient>();
 
-        final SocketIOConnection connection = new SocketIOConnection(handler, client, request);
+        final SocketIOConnection connection = new SocketIOConnection(client, request);
 
         final ConnectCallback wrappedCallback = new ConnectCallback() {
             @Override
@@ -202,7 +183,7 @@ public class SocketIOClient extends EventEmitter {
         connection.reconnect(null);
     }
 
-    public WebSocket getWebSocket() {
-        return connection.webSocket;
+    public SocketIOTransport getTransport() {
+        return connection.transport;
     }
 }

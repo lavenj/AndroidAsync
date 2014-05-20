@@ -32,6 +32,8 @@ public class UrlEncodedFormBody implements AsyncHttpRequestBody<Multimap> {
         StringBuilder b = new StringBuilder();
         try {
             for (NameValuePair pair: mParameters) {
+                if (pair.getValue() == null)
+                    continue;
                 if (!first)
                     b.append('&');
                 first = false;
@@ -76,7 +78,7 @@ public class UrlEncodedFormBody implements AsyncHttpRequestBody<Multimap> {
                     return;
                 }
                 try {
-                    mParameters = Multimap.parseQuery(data.readString());
+                    mParameters = Multimap.parseUrlEncoded(data.readString());
                     completed.onCompleted(null);
                 }
                 catch (Exception e) {

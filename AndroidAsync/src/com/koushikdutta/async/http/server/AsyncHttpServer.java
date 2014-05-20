@@ -1,6 +1,7 @@
 package com.koushikdutta.async.http.server;
 
 import android.content.Context;
+import android.content.res.AssetManager;
 import android.text.TextUtils;
 
 import com.koushikdutta.async.AsyncSSLSocketWrapper;
@@ -23,19 +24,18 @@ import com.koushikdutta.async.http.WebSocketImpl;
 import com.koushikdutta.async.http.body.AsyncHttpRequestBody;
 import com.koushikdutta.async.http.libcore.RawHeaders;
 import com.koushikdutta.async.http.libcore.RequestHeaders;
+import com.koushikdutta.async.util.StreamUtility;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 import javax.net.ssl.SSLContext;
 
@@ -322,23 +322,16 @@ public class AsyncHttpServer {
     }
 
     public static android.util.Pair<Integer, InputStream> getAssetStream(final Context context, String asset) {
-        String apkPath = context.getPackageResourcePath();
-        String assetPath = "assets/" + asset;
+        AssetManager am = context.getAssets();
         try {
-            ZipFile zip = new ZipFile(apkPath);
-            Enumeration<?> entries = zip.entries();
-            while (entries.hasMoreElements()) {
-                ZipEntry entry = (ZipEntry) entries.nextElement();
-                if (entry.getName().equals(assetPath)) {
-                    return new android.util.Pair<Integer, InputStream>((int)entry.getSize(), zip.getInputStream(entry));
-                }
-            }
+            InputStream is = am.open(asset);
+            return new android.util.Pair<Integer, InputStream>(is.available(), is);
         }
-        catch (Exception ex) {
+        catch (IOException e) {
+            return null;
         }
-        return null;
     }
-    
+
     static Hashtable<String, String> mContentTypes = new Hashtable<String, String>();
     {
         mContentTypes.put("js", "application/javascript");
@@ -377,7 +370,7 @@ public class AsyncHttpServer {
             public void onRequest(AsyncHttpServerRequest request, final AsyncHttpServerResponse response) {
                 String path = request.getMatcher().replaceAll("");
                 android.util.Pair<Integer, InputStream> pair = getAssetStream(_context, assetPath + path);
-                InputStream is = pair.second;
+                final InputStream is = pair.second;
                 response.getHeaders().getHeaders().set("Content-Length", String.valueOf(pair.first));
                 if (is == null) {
                     response.responseCode(404);
@@ -390,6 +383,7 @@ public class AsyncHttpServer {
                     @Override
                     public void onCompleted(Exception ex) {
                         response.end();
+                        StreamUtility.closeQuietly(is);
                     }
                 });
             }
@@ -399,7 +393,8 @@ public class AsyncHttpServer {
             public void onRequest(AsyncHttpServerRequest request, final AsyncHttpServerResponse response) {
                 String path = request.getMatcher().replaceAll("");
                 android.util.Pair<Integer, InputStream> pair = getAssetStream(_context, assetPath + path);
-                InputStream is = pair.second;
+                final InputStream is = pair.second;
+                StreamUtility.closeQuietly(is);
                 response.getHeaders().getHeaders().set("Content-Length", String.valueOf(pair.first));
                 if (is == null) {
                     response.responseCode(404);

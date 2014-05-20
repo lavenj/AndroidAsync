@@ -2,8 +2,10 @@ package com.koushikdutta.async.test;
 
 import com.koushikdutta.async.AsyncDatagramSocket;
 import com.koushikdutta.async.AsyncServer;
+import com.koushikdutta.async.AsyncSocket;
 import com.koushikdutta.async.ByteBufferList;
 import com.koushikdutta.async.DataEmitter;
+import com.koushikdutta.async.callback.ConnectCallback;
 import com.koushikdutta.async.callback.DataCallback;
 import com.koushikdutta.async.dns.Dns;
 import com.koushikdutta.async.dns.DnsResponse;
@@ -17,6 +19,7 @@ import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.MulticastSocket;
+import java.net.UnknownHostException;
 import java.nio.channels.DatagramChannel;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -70,5 +73,24 @@ public class DnsTests extends TestCase {
 //        });
 //
 //        semaphore.tryAcquire(1000000, TimeUnit.MILLISECONDS);
+    }
+
+    public void testNoDomain() throws Exception {
+        AsyncServer server = new AsyncServer();
+
+        try {
+            final Semaphore semaphore = new Semaphore(0);
+            server.connectSocket("www.clockworkmod-notfound.com", 8080, new ConnectCallback() {
+                @Override
+                public void onConnectCompleted(Exception ex, AsyncSocket socket) {
+                    assertTrue(ex instanceof UnknownHostException);
+                    semaphore.release();
+                }
+            });
+            assertTrue(semaphore.tryAcquire(5000, TimeUnit.MILLISECONDS));
+        }
+        finally {
+            server.stop();
+        }
     }
 }

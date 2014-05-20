@@ -62,17 +62,17 @@ public class HttpUtil {
     }
     
     public static DataEmitter getBodyDecoder(DataEmitter emitter, RawHeaders headers, boolean server) {
-        int _contentLength;
+        long _contentLength;
         try {
-            _contentLength = Integer.parseInt(headers.get("Content-Length"));
+            _contentLength = Long.parseLong(headers.get("Content-Length"));
         }
         catch (Exception ex) {
             _contentLength = -1;
         }
-        final int contentLength = _contentLength;
+        final long contentLength = _contentLength;
         if (-1 != contentLength) {
             if (contentLength < 0) {
-                EndEmitter ender = EndEmitter.create(emitter.getServer(), new Exception("not using chunked encoding, and no content-length found."));
+                EndEmitter ender = EndEmitter.create(emitter.getServer(), new BodyDecoderException("not using chunked encoding, and no content-length found."));
                 ender.setDataEmitter(emitter);
                 emitter = ender;
                 return emitter;
@@ -93,7 +93,7 @@ public class HttpUtil {
             emitter = chunker;
         }
         else {
-            if (server || headers.getStatusLine().contains("HTTP/1.1")) {
+            if ((server || headers.getStatusLine().contains("HTTP/1.1")) && !"close".equalsIgnoreCase(headers.get("Connection"))) {
                 // if this is the server, and the client has not indicated a request body, the client is done
                 EndEmitter ender = EndEmitter.create(emitter.getServer(), null);
                 ender.setDataEmitter(emitter);

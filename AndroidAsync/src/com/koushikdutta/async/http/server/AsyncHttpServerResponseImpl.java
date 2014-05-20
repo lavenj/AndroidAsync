@@ -15,9 +15,11 @@ import com.koushikdutta.async.http.HttpUtil;
 import com.koushikdutta.async.http.filter.ChunkedOutputFilter;
 import com.koushikdutta.async.http.libcore.RawHeaders;
 import com.koushikdutta.async.http.libcore.ResponseHeaders;
+import com.koushikdutta.async.util.StreamUtility;
 
 import org.json.JSONObject;
 
+import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
@@ -26,7 +28,7 @@ import java.nio.ByteBuffer;
 
 public class AsyncHttpServerResponseImpl implements AsyncHttpServerResponse {
     private RawHeaders mRawHeaders = new RawHeaders();
-    private int mContentLength = -1;
+    private long mContentLength = -1;
     private ResponseHeaders mHeaders = new ResponseHeaders(null, mRawHeaders);
     
     @Override
@@ -95,7 +97,7 @@ public class AsyncHttpServerResponseImpl implements AsyncHttpServerResponse {
         if (mContentLength < 0) {
             String contentLength = mRawHeaders.get("Content-Length");
             if (!TextUtils.isEmpty(contentLength))
-                mContentLength = Integer.valueOf(contentLength);
+                mContentLength = Long.valueOf(contentLength);
         }
         if (mContentLength < 0 && canUseChunked) {
             mRawHeaders.set("Transfer-Encoding", "Chunked");
@@ -130,8 +132,10 @@ public class AsyncHttpServerResponseImpl implements AsyncHttpServerResponse {
         else if (!mHasWritten) {
             if (!mRequest.getMethod().equalsIgnoreCase(AsyncHttpHead.METHOD))
                 send("text/html", "");
-            else
+            else {
+                writeHead();
                 onEnd();
+            }
         }
     }
 
@@ -165,6 +169,7 @@ public class AsyncHttpServerResponseImpl implements AsyncHttpServerResponse {
         mRawHeaders.set("Content-Type", contentType);
     }
 
+    @Override
     public void send(String contentType, final String string) {
         try {
             if (mRawHeaders.getStatusLine() == null)
@@ -199,7 +204,10 @@ public class AsyncHttpServerResponseImpl implements AsyncHttpServerResponse {
     @Override
     public void send(String string) {
         responseCode(200);
-        send("text/html; charset=utf8", string);
+        String contentType = mRawHeaders.get("Content-Type");
+        if (contentType == null)
+            contentType = "text/html; charset=utf8";
+        send(contentType, string);
     }
 
     @Override
@@ -208,9 +216,9 @@ public class AsyncHttpServerResponseImpl implements AsyncHttpServerResponse {
     }
 
     @Override
-    public void sendStream(InputStream inputStream, int totalLength) {
-        int start = 0;
-        int end = totalLength - 1;
+    public void sendStream(final InputStream inputStream, long totalLength) {
+        long start = 0;
+        long end = totalLength - 1;
 
         String range = mRequest.getHeaders().getHeaders().get("Range");
         if (range != null) {
@@ -225,11 +233,11 @@ public class AsyncHttpServerResponseImpl implements AsyncHttpServerResponse {
             parts = parts[1].split("-");
             try {
                 if (parts.length > 2)
-                    throw new Exception();
+                    throw new MalformedRangeException();
                 if (!TextUtils.isEmpty(parts[0]))
-                    start = Integer.parseInt(parts[0]);
+                    start = Long.parseLong(parts[0]);
                 if (parts.length == 2 && !TextUtils.isEmpty(parts[1]))
-                    end = Integer.parseInt(parts[1]);
+                    end = Long.parseLong(parts[1]);
                 else
                     end = totalLength - 1;
 
@@ -244,9 +252,9 @@ public class AsyncHttpServerResponseImpl implements AsyncHttpServerResponse {
         }
         try {
             if (start != inputStream.skip(start))
-                throw new Exception("skip failed to skip requested amount");
+                throw new StreamSkipException("skip failed to skip requested amount");
             mContentLength = end - start + 1;
-            mRawHeaders.set("Content-Length", "" + mContentLength);
+            mRawHeaders.set("Content-Length", String.valueOf(mContentLength));
             mRawHeaders.set("Accept-Ranges", "bytes");
             if (getHeaders().getHeaders().getStatusLine() == null)
                 responseCode(200);
@@ -258,6 +266,7 @@ public class AsyncHttpServerResponseImpl implements AsyncHttpServerResponse {
             Util.pump(inputStream, mContentLength, this, new CompletedCallback() {
                 @Override
                 public void onCompleted(Exception ex) {
+                    StreamUtility.closeQuietly(inputStream);
                     onEnd();
                 }
             });
@@ -274,7 +283,7 @@ public class AsyncHttpServerResponseImpl implements AsyncHttpServerResponse {
             if (mRawHeaders.get("Content-Type") == null)
                 mRawHeaders.set("Content-Type", AsyncHttpServer.getContentType(file.getAbsolutePath()));
             FileInputStream fin = new FileInputStream(file);
-            sendStream(fin, (int) file.length());
+            sendStream(new BufferedInputStream(fin, 64000), file.length());
         }
         catch (Exception e) {
             responseCode(404);

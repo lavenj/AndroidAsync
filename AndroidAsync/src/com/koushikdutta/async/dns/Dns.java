@@ -13,12 +13,10 @@ import com.koushikdutta.async.future.SimpleFuture;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.DatagramSocket;
-import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.charset.Charset;
 import java.util.Random;
 
 /**
@@ -48,99 +46,6 @@ public class Dns {
             bb.put(part.getBytes());
         }
         bb.put((byte)0);
-    }
-
-    private static String parseName(ByteBufferList bb, ByteBuffer backReference) {
-        bb.order(ByteOrder.BIG_ENDIAN);
-        String ret = "";
-
-        int len;
-        while (0 != (len = bb.get())) {
-            // compressed
-            if ((len & 0x00c0) != 0) {
-                int offset = ((len & ~0xFFFFFFc0) << 16) | (bb.get() & 0x00FF);
-                if (ret.length() > 0)
-                    ret += ".";
-                ByteBufferList sub = new ByteBufferList();
-                ByteBuffer duplicate = backReference.duplicate();
-                duplicate.get(new byte[offset]);
-                sub.add(duplicate);
-                return ret + parseName(sub, backReference);
-            }
-
-            byte[] bytes = new byte[len];
-            bb.get(bytes);
-            if (ret.length() > 0)
-                ret += ".";
-            ret += new String(bytes);
-        }
-
-        return ret;
-    }
-
-    private static InetAddress parseAddress(ByteBufferList bb) {
-        return null;
-    }
-
-    private static DnsResponse parse(ByteBufferList bb) {
-        ByteBuffer b = bb.getAll();
-        bb.add(b.duplicate());
-        // naive parsing...
-        bb.order(ByteOrder.BIG_ENDIAN);
-
-        // id
-        bb.getShort();
-        // flags
-        bb.getShort();
-
-        // number questions
-        int questions = bb.getShort();
-        // number answer rr
-        int answers = bb.getShort();
-        // number authority rr
-        bb.getShort();
-        // number additional rr
-        bb.getShort();
-
-        for (int i = 0; i < questions; i++) {
-            parseName(bb, b);
-            // type
-            bb.getShort();
-            // class
-            bb.getShort();
-        }
-
-        DnsResponse response = new DnsResponse();
-        for (int i = 0; i < answers; i++) {
-            String name = parseName(bb, b);
-            // type
-            int type = bb.getShort();
-            // class
-            int clazz = bb.getShort();
-            // ttl
-            int ttl = bb.getInt();
-            // length of address
-            int length = bb.getShort();
-            try {
-                if (type == 1) {
-                    // data
-                    byte[] data = new byte[length];
-                    bb.get(data);
-                    response.addresses.add(InetAddress.getByAddress(data));
-                }
-                else if (type == 0x000c) {
-                    response.names.add(parseName(bb, b));
-                }
-                else {
-                    bb.get(new byte[length]);
-                }
-            }
-            catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-
-        return response;
     }
 
     public static Future<DnsResponse> lookup(AsyncServer server, String host) {
@@ -220,7 +125,7 @@ public class Dns {
                 public void onDataAvailable(DataEmitter emitter, ByteBufferList bb) {
                     try {
 //                        System.out.println(dgram.getRemoteAddress());
-                        DnsResponse response = parse(bb);
+                        DnsResponse response = DnsResponse.parse(bb);
 //                        System.out.println(response);
                         response.source = dgram.getRemoteAddress();
 
